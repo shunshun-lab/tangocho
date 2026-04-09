@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { words as defaultWords } from './data/words.js';
+import { CARDS } from './data/cards.js';
 
 const LS_CUSTOM_CARDS = 'tangocho.customCards.v1';
 const LS_KNOWN = 'tangocho.knownCardIds.v1';
@@ -74,18 +74,8 @@ function parseMarkdownWordInput(markdown, startingId = 1) {
   return out;
 }
 
-function asCardsFromWords(words) {
-  // Convert existing words.js format into 1.jsx card shape
-  return words.map((w) => ({
-    id: w.id,
-    category: w.category || '未分類',
-    term: w.word,
-    definition: [w.meaning, w.example].filter(Boolean).join('\n'),
-  }));
-}
-
 export default function App() {
-  const baseCards = useMemo(() => asCardsFromWords(defaultWords), []);
+  const baseCards = useMemo(() => [...CARDS], []);
 
   const [customCards, setCustomCards] = useState([]);
   const [importText, setImportText] = useState('');
@@ -242,8 +232,10 @@ export default function App() {
     >
       {/* Header */}
       <div style={{ maxWidth: 720, margin: '0 auto', textAlign: 'center', marginBottom: 16 }}>
-        <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0, color: '#F8FAFC' }}>単語帳</h1>
-        <p style={{ fontSize: 13, color: '#94A3B8', margin: '4px 0 0' }}>取り込み対応 — {allCards.length}語</p>
+        <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0, color: '#F8FAFC' }}>MMD DAO 単語帳</h1>
+        <p style={{ fontSize: 13, color: '#94A3B8', margin: '4px 0 0' }}>
+          ChatGPT全履歴より自動抽出 — {allCards.length}語（ベース {CARDS.length}語）
+        </p>
       </div>
 
       {/* Import */}
