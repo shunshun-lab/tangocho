@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import Button from './ui/Button.jsx';
 import { Rating } from '../lib/scheduler/scheduler.js';
 import { db } from '../lib/db.js';
-import { fetchDueCardIds, fetchNewCardIds, getCardWithContent, submitReview } from '../lib/reviews.js';
+import { fetchDueCardIds, fetchNewCardIds, getCardWithContent, submitReview, suspendCard } from '../lib/reviews.js';
 
 export default function ReviewSession({ user, mode, onExit }) {
   const [queue, setQueue] = useState([]); // cardIds
@@ -99,6 +99,13 @@ export default function ReviewSession({ user, mode, onExit }) {
       setQueue((q) => [...q, card.card.id]);
     }
     setIdx((i) => Math.min(i + 1, queue.length)); // allow landing on "done"
+  };
+
+  const skipForever = async () => {
+    if (!card) return;
+    const now = Date.now();
+    await suspendCard({ userId: user.id, cardId: card.card.id, now });
+    setIdx((i) => Math.min(i + 1, queue.length));
   };
 
   useEffect(() => {
@@ -213,6 +220,12 @@ export default function ReviewSession({ user, mode, onExit }) {
               <GradeButton k="2" label="Hard" hint="思い出せたが重い" onClick={() => grade(Rating.HARD)} />
               <GradeButton k="3" label="Good" hint="普通に思い出せた" onClick={() => grade(Rating.GOOD)} />
               <GradeButton k="4" label="Easy" hint="余裕で想起" onClick={() => grade(Rating.EASY)} />
+            </div>
+
+            <div style={{ marginTop: 12, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              <Button variant="secondary" onClick={skipForever}>
+                もう出さなくていい
+              </Button>
             </div>
 
             <div style={{ marginTop: 10, fontSize: 11, color: '#64748B' }}>ショートカット: 1/2/3/4 で採点</div>

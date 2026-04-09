@@ -5,15 +5,20 @@ import { createBaselineScheduler, Rating } from './scheduler/scheduler.js';
 const scheduler = createBaselineScheduler();
 
 export async function getDueCounts({ userId, now }) {
-  const due = await db.reviewStates
+  const dueStates = await db.reviewStates
     .where('userId')
     .equals(userId)
     .and((s) => s.nextDueAt != null && s.nextDueAt <= now)
-    .count();
+    .toArray();
+  const dueCardIds = dueStates.map((s) => s.cardId);
+  const dueCards = dueCardIds.length ? await db.cards.bulkGet(dueCardIds) : [];
+  const due = dueCards.filter((c) => c && c.status === 'active' && !c.archivedAt).length;
 
-  const newCards = await db.cards.where({ userId, status: 'active' }).count();
-  const seen = await db.reviewStates.where('userId').equals(userId).count();
-  return { due, newTotal: Math.max(0, newCards - seen) };
+  const activeCards = await db.cards.where({ userId, status: 'active' }).toArray();
+  const states = await db.reviewStates.where('userId').equals(userId).toArray();
+  const seenSet = new Set(states.map((s) => s.cardId));
+  const newTotal = activeCards.filter((c) => !c.archivedAt && !seenSet.has(c.id)).length;
+  return { due, newTotal };
 }
 
 export async function fetchDueCardIds({ userId, deckId, now, limit = 50 }) {
@@ -21,7 +26,15 @@ export async function fetchDueCardIds({ userId, deckId, now, limit = 50 }) {
   if (deckId) q = q.and((s) => s.deckId === deckId);
   const dueStates = await q.and((s) => s.nextDueAt != null && s.nextDueAt <= now).toArray();
   dueStates.sort((a, b) => (a.nextDueAt || 0) - (b.nextDueAt || 0));
-  return dueStates.slice(0, limit).map((s) => s.cardId);
+  const orderedIds = dueStates.map((s) => s.cardId);
+  const cards = orderedIds.length ? await db.cards.bulkGet(orderedIds) : [];
+  const activeIdSet = new Set(
+    cards
+      .filter((c) => c && c.status === 'active' && !c.archivedAt)
+      .map((c) => c.id)
+  );
+  const filtered = orderedIds.filter((id) => activeIdSet.has(id));
+  return filtered.slice(0, limit);
 }
 
 export async function fetchNewCardIds({ userId, deckId, limit = 10 }) {
@@ -30,7 +43,7 @@ export async function fetchNewCardIds({ userId, deckId, limit = 10 }) {
   const seenSet = new Set(states.map((s) => s.cardId));
   const filtered = cards
     .filter((c) => (!deckId ? true : c.deckId === deckId))
-    .filter((c) => !seenSet.has(c.id))
+    .filter((c) => !c.archivedAt && !seenSet.has(c.id))
     .sort((a, b) => a.createdAt - b.createdAt);
   return filtered.slice(0, limit).map((c) => c.id);
 }
@@ -41,6 +54,29 @@ export async function getCardWithContent(cardId) {
   const content = await db.cardContents.get(cardId);
   const state = await db.reviewStates.get(cardId);
   return { card, content, state };
+}
+
+export async function suspendCard({ userId, cardId, now }) {
+  const card = await db.cards.get(cardId);
+  if (!card) return null;
+  if (card.userId !== userId) throw new Error('forbidden');
+
+  const updated = { ...card, status: 'suspended', updatedAt: now };
+  await db.cards.put(updated);
+
+  // optional event log entry for traceability (not a review rating)
+  await db.reviewLogs.add({
+    id: newId('rlog'),
+    userId,
+    deckId: card.deckId,
+    cardId,
+    reviewedAt: now,
+    rating: 'suspend',
+    scheduler: scheduler.name,
+    mode: 'action',
+  });
+
+  return updated;
 }
 
 export async function submitReview({
